@@ -173,22 +173,23 @@ wtc() {
 
 	worktree_dir="$git_root/.worktrees"
 	
-	if [ -d "$worktree_dir" ]; then
-		# Remove each worktree properly before removing the directory
-		for worktree in "$worktree_dir"/*; do
-			if [ -d "$worktree" ]; then
-				git worktree remove "$worktree" --force >/dev/null 2>&1
-			fi
-		done
-		# Prune worktrees to clean up git's internal state
-		git worktree prune
-		# Remove the .worktrees directory if it still exists
-		if [ -d "$worktree_dir" ]; then
-			rm -rf "$worktree_dir"
-		fi
-		echo "All worktrees have been removed."
-	else
+	if [ ! -d "$worktree_dir" ]; then
 		echo "No .worktrees directory found."
+		return 0
 	fi
+
+	# Remove each worktree properly before removing the directory
+	for worktree in "$worktree_dir"/*; do
+		if [ -d "$worktree" ]; then
+			git worktree remove "$worktree" --force >/dev/null 2>&1
+		fi
+	done
+	# Prune worktrees to clean up git's internal state
+	git worktree prune
+	# Remove the .worktrees directory if it still exists
+	if [ -d "$worktree_dir" ]; then
+		rm -rf "$worktree_dir"
+	fi
+	echo "All worktrees have been removed."
 
 }
