@@ -72,7 +72,6 @@ wt() {
 	fi    
 
 	remote_name="origin"
-	base_ref=""
 
 	if [[ "$base_branch_raw" == "$remote_name/"* ]]; then
 	    remote_branch="${base_branch_raw#"$remote_name/"}"
