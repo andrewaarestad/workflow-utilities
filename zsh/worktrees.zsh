@@ -166,7 +166,7 @@ wt_from_branch() {
 # Clean up git worktrees
 wtc() {
 	# Get the root directory of the Git repository
-	git_root=$(git rev-parse --show-toplevel)
+	git_root=$(_get_git_root)
 	if [ -z "$git_root" ]; then
 		echo "Error: not a git repository."
 		return 1
