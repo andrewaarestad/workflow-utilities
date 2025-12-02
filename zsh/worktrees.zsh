@@ -118,15 +118,14 @@ wt() {
 
 	if git worktree add "$worktree_path" "$branch_name" >/dev/null 2>&1; then
 		echo "Worktree '$branch_name' created successfully from base '$base_ref'."
+		cd "$worktree_path"
+		code .
+		cd - >/dev/null
 	else
 		git branch -D "$branch_name" >/dev/null 2>&1
 		echo "Error: Failed to create worktree '$branch_name'."
 		return 1
 	fi
-
-    cd "$worktree_path"
-    code .
-    cd ../..
 }
 
 wt_from_branch() {
@@ -148,6 +147,26 @@ wt_from_branch() {
 	worktree_dir="$git_root/.worktrees"
     safe_branch_name=$(_make_worktree_branch_name_safe "$branch_name")
 	worktree_path="$worktree_dir/$safe_branch_name"
+
+	if [ -d "$worktree_path" ]; then
+		echo "Error: Worktree path '$worktree_path' already exists."
+		return 1
+	fi
+
+	if ! git show-ref --verify "refs/heads/$branch_name" >/dev/null 2>&1; then
+		echo "Error: Branch '$branch_name' does not exist locally."
+		return 1
+	fi
+
+	if git worktree add "$worktree_path" "$branch_name" >/dev/null 2>&1; then
+		echo "Worktree '$branch_name' created successfully."
+		cd "$worktree_path"
+		code .
+		cd - >/dev/null
+	else
+		echo "Error: Failed to create worktree '$branch_name'."
+		return 1
+	fi
 }
 
 # Clean up git worktrees
@@ -162,10 +181,18 @@ wtc() {
 	worktree_dir="$git_root/.worktrees"
 	
 	if [ -d "$worktree_dir" ]; then
-		# Prune worktrees first to clean up git's internal state
+		# Remove each worktree properly before removing the directory
+		for worktree in "$worktree_dir"/*; do
+			if [ -d "$worktree" ]; then
+				git worktree remove "$worktree" --force >/dev/null 2>&1
+			fi
+		done
+		# Prune worktrees to clean up git's internal state
 		git worktree prune
-		# Forcefully remove the .worktrees directory
-		rm -rf "$worktree_dir"
+		# Remove the .worktrees directory if it still exists
+		if [ -d "$worktree_dir" ]; then
+			rm -rf "$worktree_dir"
+		fi
 		echo "All worktrees have been removed."
 	else
 		echo "No .worktrees directory found."
