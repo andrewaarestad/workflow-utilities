@@ -37,9 +37,7 @@ _prepare_worktrees_subfolder() {
 	mkdir -p "$worktree_dir"
 
 	# Ensure .gitignore exists before trying to append to it
-	if [ ! -f "$gitignore_path" ]; then
-		touch "$gitignore_path"
-	fi
+	[ -f "$gitignore_path" ] || touch "$gitignore_path"
 
 	# Add .worktrees to .gitignore if it's not already there
 	if ! grep -q "^\.worktrees$" "$gitignore_path"; then
