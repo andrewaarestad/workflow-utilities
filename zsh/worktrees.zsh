@@ -16,8 +16,8 @@ _require_git_repo_cwd() {
 }
 
 _require_non_worktree_cwd() {
-    git_root=$(_get_git_root)
-    if [[ "$git_root" == *"/.worktrees/"* ]] || [[ "$git_root" == *"/.worktrees" ]]; then
+    local git_root=$(_get_git_root)
+    if [[ "$git_root" == *"/.worktrees"* ]]; then
         echo "Error: This command cannot be run from within a git worktree. Change to the main repository first."
         return 1
     fi
