@@ -46,6 +46,8 @@ _prepare_worktrees_subfolder() {
 }
 
 # Create a git worktree
+# This function is self-contained (all helper functions inlined) to work in shell snapshots
+# like those used by Claude Code, where helper functions may not be available.
 wt() {
     if [ -z "$1" ]; then
         echo "Error: Branch name is required." >&2
@@ -57,14 +59,34 @@ wt() {
     local base_branch_raw="${2:-main}"
     local branch_name="$1"
 
-    # Check that we are in a git repository and not already in a worktree
-    local git_root=$(_require_git_repo_cwd) || return 1
-    _require_non_worktree_cwd || return 1
+    # Inline: _get_git_root() - Get git repository root directory
+    local git_root=$(git rev-parse --show-toplevel 2>/dev/null)
+    
+    # Inline: _require_git_repo_cwd() - Check that we are in a git repository
+    if [ -z "$git_root" ]; then
+        echo "Error: This command must be run from within a git repository." >&2
+        return 1
+    fi
 
-    # Prepare for worktree creation
-    _prepare_worktrees_subfolder "$git_root" || return 1
+    # Inline: _require_non_worktree_cwd() - Check that we're not already in a worktree
+    if [[ "$git_root" == *"/.worktrees"* ]]; then
+        echo "Error: This command cannot be run from within a git worktree. Change to the main repository first." >&2
+        return 1
+    fi
 
-    local worktree_path="$git_root/.worktrees/$(_make_worktree_branch_name_safe "$branch_name")"
+    # Inline: _prepare_worktrees_subfolder() - Prepare .worktrees directory and .gitignore
+    local worktree_dir="$git_root/.worktrees"
+    local gitignore_path="$git_root/.gitignore"
+    mkdir -p "$worktree_dir"
+    [ -f "$gitignore_path" ] || touch "$gitignore_path"
+    if ! grep -q "^\.worktrees$" "$gitignore_path"; then
+        echo ".worktrees" >> "$gitignore_path"
+    fi
+
+    # Inline: _make_worktree_branch_name_safe() - Convert / to - in branch name for path
+    local safe_branch_name=$(echo "$branch_name" | tr '/' '-')
+    local worktree_path="$worktree_dir/$safe_branch_name"
+
     if [ -d "$worktree_path" ]; then
         echo "Error: Worktree path '$worktree_path' already exists." >&2
         return 1
