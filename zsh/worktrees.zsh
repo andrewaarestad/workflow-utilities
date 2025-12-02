@@ -45,8 +45,6 @@ _prepare_worktrees_subfolder() {
 	if ! grep -q "^\.worktrees$" "$gitignore_path"; then
 		echo ".worktrees" >> "$gitignore_path"
 	fi
-
-    return 0
 }
 
 # Create a git worktree
