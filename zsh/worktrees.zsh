@@ -142,9 +142,7 @@ wt_from_branch() {
     git_root=$(_get_git_root)
     _prepare_worktrees_subfolder "$git_root" || return 1
 
-	worktree_dir="$git_root/.worktrees"
-    safe_branch_name=$(_make_worktree_branch_name_safe "$branch_name")
-	worktree_path="$worktree_dir/$safe_branch_name"
+	worktree_path="$git_root/.worktrees/$(_make_worktree_branch_name_safe "$branch_name")"
 
 	if [ -d "$worktree_path" ]; then
 		echo "Error: Worktree path '$worktree_path' already exists."
