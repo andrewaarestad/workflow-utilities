@@ -7,11 +7,12 @@ _get_git_root() {
 }
 
 _require_git_repo_cwd() {
-    git_root=$(_get_git_root)
+    local git_root=$(_get_git_root)
     if [ -z "$git_root" ]; then
-        echo "Error: This command must be run from within a git repository."
+        echo "Error: This command must be run from within a git repository." >&2
         return 1
     fi
+    echo "$git_root"
 }
 
 _require_non_worktree_cwd() {
@@ -58,11 +59,10 @@ wt() {
 	branch_name="$1"
 
     # Check that we are in a git repository and not already in a worktree
-    _require_git_repo_cwd || return 1
+    git_root=$(_require_git_repo_cwd) || return 1
     _require_non_worktree_cwd || return 1
 
     # Prepare for worktree creation
-    git_root=$(_get_git_root)
     _prepare_worktrees_subfolder "$git_root" || return 1
 
 	worktree_path="$git_root/.worktrees/$(_make_worktree_branch_name_safe "$branch_name")"
@@ -132,11 +132,9 @@ wt_from_branch() {
 
     branch_name="$1"
 
-    _require_git_repo_cwd || return 1
+    git_root=$(_require_git_repo_cwd) || return 1
     _require_non_worktree_cwd || return 1
 
-	# Get the root directory of the Git repository
-    git_root=$(_get_git_root)
     _prepare_worktrees_subfolder "$git_root" || return 1
 
 	worktree_path="$git_root/.worktrees/$(_make_worktree_branch_name_safe "$branch_name")"
