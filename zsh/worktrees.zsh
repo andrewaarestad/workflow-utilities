@@ -18,15 +18,15 @@ wt() {
     # Set the base branch (auto-detect default branch if not provided)
     if [ -z "$2" ]; then
         # Try to get the default branch from the remote HEAD
-        local default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+        local default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>&1 | sed 's@^refs/remotes/origin/@@')
         # Fall back to 'main' if detection fails
         local base_branch_raw="${default_branch:-main}"
     else
-        local base_branch_raw="$2"
+        return 1
     fi
 
     # Get git repository root directory
-    local git_root=$(git rev-parse --show-toplevel 2>/dev/null)
+    local git_root=$(git rev-parse --show-toplevel 2>&1)
     
     # Verify we are in a git repository
     if [ -z "$git_root" ]; then
@@ -72,7 +72,7 @@ wt() {
         fi
 
         # Fetch the remote branch
-        if ! git fetch "$remote_name" "$remote_branch" >/dev/null 2>&1; then
+        if ! git fetch "$remote_name" "$remote_branch"; then
             echo "Error: Failed to fetch remote branch '$base_branch_raw'." >&2
             return 1
         fi
@@ -81,20 +81,20 @@ wt() {
     else
         # Use local branch as base
         base_ref="$base_branch_raw"
-        if ! git rev-parse --verify "$base_ref" >/dev/null 2>&1; then
+        if ! git rev-parse --verify "$base_ref" 2>&1; then
             echo "Error: Base branch '$base_ref' does not exist locally. Use '$remote_name/<branch>' to fetch from remote." >&2
             return 1
         fi
     fi
 
     # Verify the new branch doesn't already exist
-    if git show-ref --verify "refs/heads/$branch_name" >/dev/null 2>&1; then
+    if git show-ref --verify "refs/heads/$branch_name" 2>&1; then
         echo "Error: Branch '$branch_name' already exists." >&2
         return 1
     fi
 
     # Resolve base reference to a commit SHA
-    local base_commit=$(git rev-parse "$base_ref^{commit}" 2>/dev/null)
+    local base_commit=$(git rev-parse "$base_ref^{commit}" 2>&1)
     if [ -z "$base_commit" ]; then
         echo "Error: Could not resolve base reference '$base_ref' to a commit." >&2
         return 1
@@ -102,20 +102,37 @@ wt() {
 
     # Create the new branch from the base commit
     echo "Creating branch '$branch_name' from '$base_ref' at commit '$base_commit'."
-    if ! git branch "$branch_name" "$base_commit" >/dev/null 2>&1; then
+    if ! git branch "$branch_name" "$base_commit"; then
         echo "Error: Failed to create branch '$branch_name'." >&2
         return 1
     fi
 
     # Create the worktree and open in VS Code
-    if git worktree add "$worktree_path" "$branch_name" >/dev/null 2>&1; then
-        echo "Worktree '$branch_name' created successfully from base '$base_ref'."
+    if git worktree add "$worktree_path" "$branch_name"; then
+        # Print fancy summary
+        echo ""
+        echo "═══════════════════════════════════════════════════════════════"
+        echo "  ✓ Worktree Created Successfully"
+        echo "═══════════════════════════════════════════════════════════════"
+        echo ""
+        echo "  Command:        wt $1$([ -n "$2" ] && echo " $2")"
+        echo "  New Branch:     $branch_name"
+        echo "  Based On:       $base_ref"
+        echo "  Commit:         ${base_commit:0:8}"
+        echo "  Worktree Path:  $worktree_path"
+        echo ""
+        echo "  Branch Relationship:"
+        echo "    $branch_name (new local branch)"
+        echo "      └─ branched from → $base_ref"
+        echo ""
+        echo "═══════════════════════════════════════════════════════════════"
+        echo ""
         cd "$worktree_path"
         code .
-        cd - >/dev/null
+        cd -
     else
         # Clean up the branch if worktree creation fails
-        git branch -D "$branch_name" >/dev/null 2>&1
+        git branch -D "$branch_name"
         echo "Error: Failed to create worktree '$branch_name'." >&2
         return 1
     fi
@@ -132,7 +149,7 @@ wt_from_branch() {
     local branch_name="$1"
 
     # Get git repository root directory
-    local git_root=$(git rev-parse --show-toplevel 2>/dev/null)
+    local git_root=$(git rev-parse --show-toplevel 2>&1)
     
     # Verify we are in a git repository
     if [ -z "$git_root" ]; then
@@ -176,7 +193,7 @@ wt_from_branch() {
     local branch_exists_remotely=false
 
     # Check if the branch exists locally
-    if git show-ref --verify "refs/heads/$branch_name" >/dev/null 2>&1; then
+    if git show-ref --verify "refs/heads/$branch_name" 2>&1; then
         branch_exists_locally=true
     fi
 
@@ -188,7 +205,7 @@ wt_from_branch() {
         else
             # Branch not found on remote, try fetching and checking again
             echo "Branch '$branch_name' not found locally or on remote. Fetching from '$remote_name'..."
-            if git fetch "$remote_name" >/dev/null 2>&1; then
+            if git fetch "$remote_name"; then
                 # Check again after fetch
                 if git ls-remote --heads "$remote_name" "$branch_name" | grep -q "$branch_name"; then
                     branch_exists_remotely=true
@@ -204,19 +221,49 @@ wt_from_branch() {
 
         # Branch exists on remote, so create a local tracking branch and worktree
         echo "Creating local branch '$branch_name' tracking '$remote_name/$branch_name'."
-        if ! git branch --track "$branch_name" "$remote_name/$branch_name" >/dev/null 2>&1; then
+        if ! git branch --track "$branch_name" "$remote_name/$branch_name"; then
             echo "Error: Failed to create tracking branch '$branch_name'." >&2
             return 1
         fi
     fi
 
     # Create the worktree from the branch (now guaranteed to exist locally)
-    if git worktree add "$worktree_path" "$branch_name" >/dev/null 2>&1; then
-        echo "Worktree '$branch_name' created successfully."
+    if git worktree add "$worktree_path" "$branch_name"; then
+        # Get current commit and tracking info
+        local current_commit=$(git rev-parse "$branch_name" 2>&1 | cut -c1-8)
+        local tracking_info=""
+        local relationship=""
+        
+        # Check if branch is tracking a remote
+        if git config "branch.$branch_name.remote" >/dev/null 2>&1; then
+            local remote=$(git config "branch.$branch_name.remote")
+            local merge=$(git config "branch.$branch_name.merge" | sed 's@^refs/heads/@@')
+            tracking_info="$remote/$merge"
+            relationship="    $branch_name (local branch)\n      └─ tracking → $tracking_info"
+        else
+            relationship="    $branch_name (local branch, no remote tracking)"
+        fi
+        
+        # Print fancy summary
+        echo ""
+        echo "═══════════════════════════════════════════════════════════════"
+        echo "  ✓ Worktree Created Successfully"
+        echo "═══════════════════════════════════════════════════════════════"
+        echo ""
+        echo "  Command:        wt_from_branch $1"
+        echo "  Branch:         $branch_name"
+        echo "  Commit:         $current_commit"
+        echo "  Worktree Path:  $worktree_path"
+        echo ""
+        echo "  Branch Relationship:"
+        echo "$relationship"
+        echo ""
+        echo "═══════════════════════════════════════════════════════════════"
+        echo ""
         # Navigate to the new worktree and open in VS Code
         cd "$worktree_path"
         code .
-        cd - >/dev/null
+        cd -
     else
         echo "Error: Failed to create worktree '$branch_name'." >&2
         return 1
@@ -227,7 +274,7 @@ wt_from_branch() {
 # WARNING: This is a destructive operation that removes all worktrees
 wtc() {
     # Get the root directory of the git repository
-    local git_root=$(git rev-parse --show-toplevel 2>/dev/null)
+    local git_root=$(git rev-parse --show-toplevel 2>&1)
     if [ -z "$git_root" ]; then
         echo "Error: not a git repository." >&2
         return 1
@@ -281,7 +328,7 @@ wtc() {
         if [ -d "$worktree" ]; then
             local wt_name=$(basename "$worktree")
             echo "  Removing $wt_name..."
-            git worktree remove "$worktree" --force >/dev/null 2>&1
+            git worktree remove "$worktree" --force
         fi
     done
     
