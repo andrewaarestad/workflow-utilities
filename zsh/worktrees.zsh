@@ -2,53 +2,11 @@
 # Shell aliases for working with git worktrees
 # Source this file from your .zshrc with: source /path/to/file
 
-_get_git_root() {
-    git rev-parse --show-toplevel 2>/dev/null
-}
-
-_require_git_repo_cwd() {
-    local git_root=$(_get_git_root)
-    if [ -z "$git_root" ]; then
-        echo "Error: This command must be run from within a git repository." >&2
-        return 1
-    fi
-    echo "$git_root"
-}
-
-_require_non_worktree_cwd() {
-    local git_root=$(_get_git_root)
-    if [[ "$git_root" == *"/.worktrees"* ]]; then
-        echo "Error: This command cannot be run from within a git worktree. Change to the main repository first." >&2
-        return 1
-    fi
-}
-
-_make_worktree_branch_name_safe() {
-    # convert / to - in worktree path:
-    echo "$1" | tr '/' '-'
-}
-
-_prepare_worktrees_subfolder() {
-    local git_root="$1"
-    local worktree_dir="$git_root/.worktrees"
-    local gitignore_path="$git_root/.gitignore"
-
-    # Create the .worktrees directory if it doesn't exist
-    mkdir -p "$worktree_dir"
-
-    # Ensure .gitignore exists before trying to append to it
-    [ -f "$gitignore_path" ] || touch "$gitignore_path"
-
-    # Add .worktrees to .gitignore if it's not already there
-    if ! grep -q "^\.worktrees$" "$gitignore_path"; then
-        echo ".worktrees" >> "$gitignore_path"
-    fi
-}
-
-# Create a git worktree
-# This function is self-contained (all helper functions inlined) to work in shell snapshots
-# like those used by Claude Code, where helper functions may not be available.
+# Create a new git worktree with a new branch
+# Usage: wt <branch-name> [base-branch]
+# Creates a new branch from base-branch (defaults to 'main') and sets up a worktree for it
 wt() {
+    # Validate branch name argument
     if [ -z "$1" ]; then
         echo "Error: Branch name is required." >&2
         echo "Usage: wt <branch-name> [base-branch]" >&2
@@ -59,22 +17,22 @@ wt() {
     local base_branch_raw="${2:-main}"
     local branch_name="$1"
 
-    # Inline: _get_git_root() - Get git repository root directory
+    # Get git repository root directory
     local git_root=$(git rev-parse --show-toplevel 2>/dev/null)
     
-    # Inline: _require_git_repo_cwd() - Check that we are in a git repository
+    # Verify we are in a git repository
     if [ -z "$git_root" ]; then
         echo "Error: This command must be run from within a git repository." >&2
         return 1
     fi
 
-    # Inline: _require_non_worktree_cwd() - Check that we're not already in a worktree
+    # Verify we're not already in a worktree (path shouldn't contain /.worktrees)
     if [[ "$git_root" == *"/.worktrees"* ]]; then
         echo "Error: This command cannot be run from within a git worktree. Change to the main repository first." >&2
         return 1
     fi
 
-    # Inline: _prepare_worktrees_subfolder() - Prepare .worktrees directory and .gitignore
+    # Prepare .worktrees directory and ensure it's in .gitignore
     local worktree_dir="$git_root/.worktrees"
     local gitignore_path="$git_root/.gitignore"
     mkdir -p "$worktree_dir"
@@ -83,10 +41,11 @@ wt() {
         echo ".worktrees" >> "$gitignore_path"
     fi
 
-    # Inline: _make_worktree_branch_name_safe() - Convert / to - in branch name for path
+    # Convert / to - in branch name to create a safe directory path
     local safe_branch_name=$(echo "$branch_name" | tr '/' '-')
     local worktree_path="$worktree_dir/$safe_branch_name"
 
+    # Check if worktree path already exists
     if [ -d "$worktree_path" ]; then
         echo "Error: Worktree path '$worktree_path' already exists." >&2
         return 1
@@ -95,13 +54,16 @@ wt() {
     local remote_name="origin"
     local base_ref
 
+    # Determine if base branch is a remote reference (e.g., origin/main)
     if [[ "$base_branch_raw" == "$remote_name/"* ]]; then
+        # Extract the remote branch name
         local remote_branch="${base_branch_raw#"$remote_name/"}"
         if [ -z "$remote_branch" ]; then
             echo "Error: Invalid remote branch name." >&2
             return 1
         fi
 
+        # Fetch the remote branch
         if ! git fetch "$remote_name" "$remote_branch" >/dev/null 2>&1; then
             echo "Error: Failed to fetch remote branch '$base_branch_raw'." >&2
             return 1
@@ -109,6 +71,7 @@ wt() {
 
         base_ref="$remote_name/$remote_branch"
     else
+        # Use local branch as base
         base_ref="$base_branch_raw"
         if ! git rev-parse --verify "$base_ref" >/dev/null 2>&1; then
             echo "Error: Base branch '$base_ref' does not exist locally. Use '$remote_name/<branch>' to fetch from remote." >&2
@@ -116,29 +79,34 @@ wt() {
         fi
     fi
 
+    # Verify the new branch doesn't already exist
     if git show-ref --verify "refs/heads/$branch_name" >/dev/null 2>&1; then
         echo "Error: Branch '$branch_name' already exists." >&2
         return 1
     fi
 
+    # Resolve base reference to a commit SHA
     local base_commit=$(git rev-parse "$base_ref^{commit}" 2>/dev/null)
     if [ -z "$base_commit" ]; then
         echo "Error: Could not resolve base reference '$base_ref' to a commit." >&2
         return 1
     fi
 
+    # Create the new branch from the base commit
     echo "Creating branch '$branch_name' from '$base_ref' at commit '$base_commit'."
     if ! git branch "$branch_name" "$base_commit" >/dev/null 2>&1; then
         echo "Error: Failed to create branch '$branch_name'." >&2
         return 1
     fi
 
+    # Create the worktree and open in VS Code
     if git worktree add "$worktree_path" "$branch_name" >/dev/null 2>&1; then
         echo "Worktree '$branch_name' created successfully from base '$base_ref'."
         cd "$worktree_path"
         code .
         cd - >/dev/null
     else
+        # Clean up the branch if worktree creation fails
         git branch -D "$branch_name" >/dev/null 2>&1
         echo "Error: Failed to create worktree '$branch_name'." >&2
         return 1
@@ -250,7 +218,7 @@ wt_from_branch() {
 # Clean up git worktrees
 wtc() {
     # Get the root directory of the Git repository
-    local git_root=$(_get_git_root)
+    local git_root=$(git rev-parse --show-toplevel 2>/dev/null)
     if [ -z "$git_root" ]; then
         echo "Error: not a git repository." >&2
         return 1
