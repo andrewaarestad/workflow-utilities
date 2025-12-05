@@ -146,6 +146,7 @@ wt() {
 }
 
 wt_from_branch() {
+    # Check if branch name argument was provided
     if [ -z "$1" ]; then
         echo "Error: Branch name is required." >&2
         echo "Usage: wt_from_branch <branch-name>" >&2
@@ -153,25 +154,90 @@ wt_from_branch() {
     fi
 
     local branch_name="$1"
-    local git_root=$(_require_git_repo_cwd) || return 1
-    _require_non_worktree_cwd || return 1
 
-    _prepare_worktrees_subfolder "$git_root" || return 1
+    # Get git repository root directory
+    local git_root=$(git rev-parse --show-toplevel 2>/dev/null)
+    
+    # Verify we are in a git repository
+    if [ -z "$git_root" ]; then
+        echo "Error: This command must be run from within a git repository." >&2
+        return 1
+    fi
 
-    local worktree_path="$git_root/.worktrees/$(_make_worktree_branch_name_safe "$branch_name")"
+    # Verify we're not already in a worktree (path shouldn't contain /.worktrees)
+    if [[ "$git_root" == *"/.worktrees"* ]]; then
+        echo "Error: This command cannot be run from within a git worktree. Change to the main repository first." >&2
+        return 1
+    fi
 
+    # Prepare .worktrees directory and ensure it's in .gitignore
+    local worktree_dir="$git_root/.worktrees"
+    local gitignore_path="$git_root/.gitignore"
+    
+    # Create the .worktrees directory if it doesn't exist
+    mkdir -p "$worktree_dir"
+    
+    # Ensure .gitignore exists before trying to append to it
+    [ -f "$gitignore_path" ] || touch "$gitignore_path"
+    
+    # Add .worktrees to .gitignore if it's not already there
+    if ! grep -q "^\.worktrees$" "$gitignore_path"; then
+        echo ".worktrees" >> "$gitignore_path"
+    fi
+
+    # Convert / to - in branch name to create a safe directory path
+    local safe_branch_name=$(echo "$branch_name" | tr '/' '-')
+    local worktree_path="$worktree_dir/$safe_branch_name"
+
+    # Check if worktree path already exists
     if [ -d "$worktree_path" ]; then
         echo "Error: Worktree path '$worktree_path' already exists." >&2
         return 1
     fi
 
-    if ! git show-ref --verify "refs/heads/$branch_name" >/dev/null 2>&1; then
-        echo "Error: Branch '$branch_name' does not exist locally." >&2
-        return 1
+    local remote_name="origin"
+    local branch_exists_locally=false
+    local branch_exists_remotely=false
+
+    # Check if the branch exists locally
+    if git show-ref --verify "refs/heads/$branch_name" >/dev/null 2>&1; then
+        branch_exists_locally=true
     fi
 
+    # If branch doesn't exist locally, check if it exists on the remote
+    if [ "$branch_exists_locally" = false ]; then
+        # Check if the branch exists on origin
+        if git ls-remote --heads "$remote_name" "$branch_name" | grep -q "$branch_name"; then
+            branch_exists_remotely=true
+        else
+            # Branch not found on remote, try fetching and checking again
+            echo "Branch '$branch_name' not found locally or on remote. Fetching from '$remote_name'..."
+            if git fetch "$remote_name" >/dev/null 2>&1; then
+                # Check again after fetch
+                if git ls-remote --heads "$remote_name" "$branch_name" | grep -q "$branch_name"; then
+                    branch_exists_remotely=true
+                fi
+            fi
+        fi
+
+        # If branch still doesn't exist anywhere, error out
+        if [ "$branch_exists_remotely" = false ]; then
+            echo "Error: Branch '$branch_name' does not exist locally or on '$remote_name'." >&2
+            return 1
+        fi
+
+        # Branch exists on remote, so create a local tracking branch and worktree
+        echo "Creating local branch '$branch_name' tracking '$remote_name/$branch_name'."
+        if ! git branch --track "$branch_name" "$remote_name/$branch_name" >/dev/null 2>&1; then
+            echo "Error: Failed to create tracking branch '$branch_name'." >&2
+            return 1
+        fi
+    fi
+
+    # Create the worktree from the branch (now guaranteed to exist locally)
     if git worktree add "$worktree_path" "$branch_name" >/dev/null 2>&1; then
         echo "Worktree '$branch_name' created successfully."
+        # Navigate to the new worktree and open in VS Code
         cd "$worktree_path"
         code .
         cd - >/dev/null
