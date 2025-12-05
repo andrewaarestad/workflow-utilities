@@ -13,9 +13,17 @@ wt() {
         return 1
     fi
 
-    # Set the base branch (default to 'main' if not provided)
-    local base_branch_raw="${2:-main}"
     local branch_name="$1"
+    
+    # Set the base branch (auto-detect default branch if not provided)
+    if [ -z "$2" ]; then
+        # Try to get the default branch from the remote HEAD
+        local default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+        # Fall back to 'main' if detection fails
+        local base_branch_raw="${default_branch:-main}"
+    else
+        local base_branch_raw="$2"
+    fi
 
     # Get git repository root directory
     local git_root=$(git rev-parse --show-toplevel 2>/dev/null)
