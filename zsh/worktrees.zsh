@@ -223,9 +223,10 @@ wt_from_branch() {
     fi
 }
 
-# Clean up git worktrees
+# Clean up all git worktrees
+# WARNING: This is a destructive operation that removes all worktrees
 wtc() {
-    # Get the root directory of the Git repository
+    # Get the root directory of the git repository
     local git_root=$(git rev-parse --show-toplevel 2>/dev/null)
     if [ -z "$git_root" ]; then
         echo "Error: not a git repository." >&2
@@ -234,22 +235,63 @@ wtc() {
 
     local worktree_dir="$git_root/.worktrees"
 
+    # Check if .worktrees directory exists
     if [ ! -d "$worktree_dir" ]; then
         echo "No .worktrees directory found."
         return 0
     fi
 
-    # Remove each worktree properly before removing the directory
+    # Count and list worktrees to be removed
+    local worktree_count=0
+    local worktree_list=()
+    
     for worktree in "$worktree_dir"/*; do
         if [ -d "$worktree" ]; then
+            worktree_count=$((worktree_count + 1))
+            worktree_list+=("$(basename "$worktree")")
+        fi
+    done
+
+    # Exit if no worktrees found
+    if [ "$worktree_count" -eq 0 ]; then
+        echo "No worktrees found in $worktree_dir"
+        return 0
+    fi
+
+    # Display worktrees to be removed
+    echo "The following $worktree_count worktree(s) will be removed:"
+    for wt in "${worktree_list[@]}"; do
+        echo "  - $wt"
+    done
+    echo ""
+
+    # Prompt for confirmation (default Yes)
+    read -q "REPLY?Are you sure you want to remove all worktrees? [Y/n] "
+    echo ""
+    
+    # Check response (empty or Y/y means yes due to -q flag behavior)
+    if [[ ! $REPLY =~ ^[Yy]$ ]] && [[ -n $REPLY ]]; then
+        echo "Operation cancelled."
+        return 0
+    fi
+
+    # Remove each worktree using git worktree remove
+    echo "Removing worktrees..."
+    for worktree in "$worktree_dir"/*; do
+        if [ -d "$worktree" ]; then
+            local wt_name=$(basename "$worktree")
+            echo "  Removing $wt_name..."
             git worktree remove "$worktree" --force >/dev/null 2>&1
         fi
     done
+    
     # Prune worktrees to clean up git's internal state
     git worktree prune
+    
     # Remove the .worktrees directory if it still exists
     if [ -d "$worktree_dir" ]; then
         rm -rf "$worktree_dir"
     fi
-    echo "All worktrees have been removed."
+    
+    echo "All worktrees have been removed successfully."
 }
