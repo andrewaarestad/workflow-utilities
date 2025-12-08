@@ -312,15 +312,10 @@ wtc() {
     done
     echo ""
 
-    # Prompt for confirmation (default Yes)
-    read -q "REPLY?Are you sure you want to remove all worktrees? [Y/n] "
+    # Prompt for confirmation
+    echo -n "Press Enter to continue or Ctrl+C to cancel..."
+    read REPLY
     echo ""
-    
-    # Check response (empty or Y/y means yes due to -q flag behavior)
-    if [[ ! $REPLY =~ ^[Yy]$ ]] && [[ -n $REPLY ]]; then
-        echo "Operation cancelled."
-        return 0
-    fi
 
     # Remove each worktree using git worktree remove
     echo "Removing worktrees..."
@@ -341,4 +336,97 @@ wtc() {
     fi
     
     echo "All worktrees have been removed successfully."
+}
+
+# Close the current worktree
+# Removes the current worktree directory and switches to the repository root
+# Usage: wt_close
+wt_close() {
+    # Get the current directory
+    local current_dir="$PWD"
+    
+    # Get git repository root directory
+    local git_root=$(git rev-parse --show-toplevel 2>&1)
+    
+    # Verify we are in a git repository
+    if [ -z "$git_root" ]; then
+        echo "Error: This command must be run from within a git repository." >&2
+        return 1
+    fi
+
+    # Verify we're in a worktree (path should contain /.worktrees)
+    if [[ "$git_root" != *"/.worktrees"* ]]; then
+        echo "Error: This command must be run from within a git worktree." >&2
+        echo "Current directory does not appear to be a worktree." >&2
+        return 1
+    fi
+
+    # Extract the worktree name from the path
+    local worktree_name=$(basename "$git_root")
+    local worktree_path="$git_root"
+    
+    # Get the actual repository root (parent of .worktrees)
+    local repo_root=$(dirname "$(dirname "$git_root")")
+    
+    # Get the branch name for this worktree
+    local branch_name=$(git rev-parse --abbrev-ref HEAD 2>&1)
+    if [ -z "$branch_name" ]; then
+        echo "Error: Could not determine branch name for this worktree." >&2
+        return 1
+    fi
+
+    # Display summary of what will be removed
+    echo ""
+    echo "═══════════════════════════════════════════════════════════════"
+    echo "  Worktree Closure Summary"
+    echo "═══════════════════════════════════════════════════════════════"
+    echo ""
+    echo "  Worktree Name:  $worktree_name"
+    echo "  Branch:         $branch_name"
+    echo "  Path:           $worktree_path"
+    echo "  Repo Root:      $repo_root"
+    echo ""
+    echo "  Actions:"
+    echo "    • Remove worktree directory"
+    echo "    • Clean up git worktree references"
+    echo "    • Switch to repository root: $repo_root"
+    echo ""
+    echo "  Note: The branch '$branch_name' will remain in the repository."
+    echo ""
+    echo "═══════════════════════════════════════════════════════════════"
+    echo ""
+
+    # Prompt for confirmation
+    echo -n "Press Enter to continue or Ctrl+C to cancel..."
+    read REPLY
+    echo ""
+
+    # Change to the repository root first (required before removing worktree)
+    cd "$repo_root" || {
+        echo "Error: Failed to change to repository root." >&2
+        return 1
+    }
+
+    # Remove the worktree
+    echo ""
+    echo "Removing worktree..."
+    if git worktree remove "$worktree_path" --force; then
+        echo ""
+        echo "═══════════════════════════════════════════════════════════════"
+        echo "  ✓ Worktree Closed Successfully"
+        echo "═══════════════════════════════════════════════════════════════"
+        echo ""
+        echo "  Removed:        $worktree_name"
+        echo "  Branch:         $branch_name (still exists)"
+        echo "  Current Dir:    $repo_root"
+        echo ""
+        echo "═══════════════════════════════════════════════════════════════"
+        echo ""
+    else
+        echo "Error: Failed to remove worktree." >&2
+        return 1
+    fi
+
+    # Prune to clean up any stale references
+    git worktree prune
 }
