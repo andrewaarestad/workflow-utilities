@@ -141,9 +141,9 @@ wt() {
         echo ""
         echo "═══════════════════════════════════════════════════════════════"
         echo ""
-        cd "$worktree_path"
-        code .
-        cd -
+        # cd "$worktree_path"
+        # code .
+        # cd -
     else
         # Clean up the branch if worktree creation fails
         git branch -D "$branch_name"
@@ -283,9 +283,9 @@ wt_from_branch() {
         echo "═══════════════════════════════════════════════════════════════"
         echo ""
         # Navigate to the new worktree and open in VS Code
-        cd "$worktree_path"
-        code .
-        cd -
+        # cd "$worktree_path"
+        # code .
+        # cd -
     else
         echo "Error: Failed to create worktree '$branch_name'." >&2
         return 1
