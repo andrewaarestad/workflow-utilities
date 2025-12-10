@@ -22,7 +22,7 @@ wt() {
         # Fall back to 'main' if detection fails
         local base_branch_raw="${default_branch:-main}"
     else
-        return 1
+        local base_branch_raw="$2"
     fi
 
     # Get git repository root directory
