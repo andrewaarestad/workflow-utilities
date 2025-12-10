@@ -34,20 +34,34 @@ wt() {
         return 1
     fi
 
-    # Verify we're not already in a worktree (path shouldn't contain /.worktrees)
-    if [[ "$git_root" == *"/.worktrees"* ]]; then
+    # Determine worktree directory based on WORKTREE_ROOT
+    local worktree_dir
+    local using_external_root=false
+    if [ -n "$WORKTREE_ROOT" ]; then
+        # Extract repo name from directory
+        local repo_name=$(basename "$git_root")
+        worktree_dir="$WORKTREE_ROOT/$repo_name"
+        using_external_root=true
+    else
+        worktree_dir="$git_root/.worktrees"
+    fi
+
+    # Verify we're not already in a worktree
+    if [[ "$git_root" == *"/.worktrees/"* ]] || [[ -n "$WORKTREE_ROOT" && "$git_root" == "$WORKTREE_ROOT"* ]]; then
         echo "Error: This command cannot be run from within a git worktree. Change to the main repository first." >&2
         return 1
     fi
 
-    # Prepare .worktrees directory and ensure it's in .gitignore
-    local worktree_dir="$git_root/.worktrees"
-    local gitignore_path="$git_root/.gitignore"
-    mkdir -p "$worktree_dir"
-    [ -f "$gitignore_path" ] || touch "$gitignore_path"
-    if ! grep -q "^\.worktrees$" "$gitignore_path"; then
-        echo ".worktrees" >> "$gitignore_path"
+    # Only manage .gitignore if using internal path
+    if [ "$using_external_root" = false ]; then
+        local gitignore_path="$git_root/.gitignore"
+        [ -f "$gitignore_path" ] || touch "$gitignore_path"
+        if ! grep -q "^\.worktrees$" "$gitignore_path"; then
+            echo ".worktrees" >> "$gitignore_path"
+        fi
     fi
+
+    mkdir -p "$worktree_dir"
 
     # Convert / to - in branch name to create a safe directory path
     local safe_branch_name=$(echo "$branch_name" | tr '/' '-')
@@ -157,26 +171,34 @@ wt_from_branch() {
         return 1
     fi
 
-    # Verify we're not already in a worktree (path shouldn't contain /.worktrees)
-    if [[ "$git_root" == *"/.worktrees"* ]]; then
+    # Determine worktree directory based on WORKTREE_ROOT
+    local worktree_dir
+    local using_external_root=false
+    if [ -n "$WORKTREE_ROOT" ]; then
+        # Extract repo name from directory
+        local repo_name=$(basename "$git_root")
+        worktree_dir="$WORKTREE_ROOT/$repo_name"
+        using_external_root=true
+    else
+        worktree_dir="$git_root/.worktrees"
+    fi
+
+    # Verify we're not already in a worktree
+    if [[ "$git_root" == *"/.worktrees/"* ]] || [[ -n "$WORKTREE_ROOT" && "$git_root" == "$WORKTREE_ROOT"* ]]; then
         echo "Error: This command cannot be run from within a git worktree. Change to the main repository first." >&2
         return 1
     fi
 
-    # Prepare .worktrees directory and ensure it's in .gitignore
-    local worktree_dir="$git_root/.worktrees"
-    local gitignore_path="$git_root/.gitignore"
-    
-    # Create the .worktrees directory if it doesn't exist
-    mkdir -p "$worktree_dir"
-    
-    # Ensure .gitignore exists before trying to append to it
-    [ -f "$gitignore_path" ] || touch "$gitignore_path"
-    
-    # Add .worktrees to .gitignore if it's not already there
-    if ! grep -q "^\.worktrees$" "$gitignore_path"; then
-        echo ".worktrees" >> "$gitignore_path"
+    # Only manage .gitignore if using internal path
+    if [ "$using_external_root" = false ]; then
+        local gitignore_path="$git_root/.gitignore"
+        [ -f "$gitignore_path" ] || touch "$gitignore_path"
+        if ! grep -q "^\.worktrees$" "$gitignore_path"; then
+            echo ".worktrees" >> "$gitignore_path"
+        fi
     fi
+
+    mkdir -p "$worktree_dir"
 
     # Convert / to - in branch name to create a safe directory path
     local safe_branch_name=$(echo "$branch_name" | tr '/' '-')
@@ -280,11 +302,18 @@ wtc() {
         return 1
     fi
 
-    local worktree_dir="$git_root/.worktrees"
+    # Determine worktree directory based on WORKTREE_ROOT
+    local worktree_dir
+    if [ -n "$WORKTREE_ROOT" ]; then
+        local repo_name=$(basename "$git_root")
+        worktree_dir="$WORKTREE_ROOT/$repo_name"
+    else
+        worktree_dir="$git_root/.worktrees"
+    fi
 
-    # Check if .worktrees directory exists
+    # Check if worktree directory exists
     if [ ! -d "$worktree_dir" ]; then
-        echo "No .worktrees directory found."
+        echo "No worktrees directory found at $worktree_dir"
         return 0
     fi
 
@@ -354,8 +383,22 @@ wt_close() {
         return 1
     fi
 
-    # Verify we're in a worktree (path should contain /.worktrees)
-    if [[ "$git_root" != *"/.worktrees"* ]]; then
+    # Verify we're in a worktree and determine repo root
+    local is_worktree=false
+    local repo_root
+    
+    if [[ "$git_root" == *"/.worktrees/"* ]]; then
+        # Internal worktree
+        is_worktree=true
+        repo_root=$(dirname "$(dirname "$git_root")")
+    elif [[ -n "$WORKTREE_ROOT" && "$git_root" == "$WORKTREE_ROOT"* ]]; then
+        # External worktree using WORKTREE_ROOT
+        is_worktree=true
+        # Use git to find the main repository
+        repo_root=$(git rev-parse --git-common-dir 2>&1 | sed 's@/\.git$@@')
+    fi
+
+    if [ "$is_worktree" = false ]; then
         echo "Error: This command must be run from within a git worktree." >&2
         echo "Current directory does not appear to be a worktree." >&2
         return 1
@@ -364,9 +407,6 @@ wt_close() {
     # Extract the worktree name from the path
     local worktree_name=$(basename "$git_root")
     local worktree_path="$git_root"
-    
-    # Get the actual repository root (parent of .worktrees)
-    local repo_root=$(dirname "$(dirname "$git_root")")
     
     # Get the branch name for this worktree
     local branch_name=$(git rev-parse --abbrev-ref HEAD 2>&1)
