@@ -102,7 +102,7 @@ wt() {
     fi
 
     # Verify the new branch doesn't already exist
-    if git show-ref --verify "refs/heads/$branch_name" 2>&1; then
+    if git show-ref --verify "refs/heads/$branch_name" >/dev/null 2>&1; then
         echo "Error: Branch '$branch_name' already exists." >&2
         return 1
     fi
