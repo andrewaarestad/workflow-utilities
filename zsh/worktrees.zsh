@@ -215,7 +215,7 @@ wt_from_branch() {
     local branch_exists_remotely=false
 
     # Check if the branch exists locally
-    if git show-ref --verify "refs/heads/$branch_name" 2>&1; then
+    if git show-ref --verify "refs/heads/$branch_name" >/dev/null 2>&1; then
         branch_exists_locally=true
     fi
 
