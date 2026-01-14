@@ -3,13 +3,22 @@
 # Source this file from your .zshrc with: source /path/to/file
 
 # Create a new git worktree with a new branch
-# Usage: wt <branch-name> [base-branch]
+# Usage: wt [-c] <branch-name> [base-branch]
 # Creates a new branch from base-branch (defaults to 'main') and sets up a worktree for it
+# -c: Open the worktree in VS Code after creation
 wt() {
+    local open_in_code=false
+    
+    # Parse options
+    if [[ "$1" == "-c" ]]; then
+        open_in_code=true
+        shift
+    fi
+    
     # Validate branch name argument
     if [ -z "$1" ]; then
         echo "Error: Branch name is required." >&2
-        echo "Usage: wt <branch-name> [base-branch]" >&2
+        echo "Usage: wt [-c] <branch-name> [base-branch]" >&2
         return 1
     fi
 
@@ -129,7 +138,7 @@ wt() {
         echo "  ✓ Worktree Created Successfully"
         echo "═══════════════════════════════════════════════════════════════"
         echo ""
-        echo "  Command:        wt $1$([ -n "$2" ] && echo " $2")"
+        echo "  Command:        wt $([[ "$open_in_code" == true ]] && echo "-c ")$1$([ -n "$2" ] && echo " $2")"
         echo "  New Branch:     $branch_name"
         echo "  Based On:       $base_ref"
         echo "  Commit:         ${base_commit:0:8}"
@@ -141,9 +150,12 @@ wt() {
         echo ""
         echo "═══════════════════════════════════════════════════════════════"
         echo ""
-        # cd "$worktree_path"
-        # code .
-        # cd -
+        
+        # Open in VS Code if -c flag was provided
+        if [[ "$open_in_code" == true ]]; then
+            echo "Opening worktree in VS Code..."
+            code "$worktree_path"
+        fi
     else
         # Clean up the branch if worktree creation fails
         git branch -D "$branch_name"
@@ -153,10 +165,18 @@ wt() {
 }
 
 wt_from_branch() {
+    local open_in_code=false
+    
+    # Parse options
+    if [[ "$1" == "-c" ]]; then
+        open_in_code=true
+        shift
+    fi
+    
     # Check if branch name argument was provided
     if [ -z "$1" ]; then
         echo "Error: Branch name is required." >&2
-        echo "Usage: wt_from_branch <branch-name>" >&2
+        echo "Usage: wt_from_branch [-c] <branch-name>" >&2
         return 1
     fi
 
@@ -272,7 +292,7 @@ wt_from_branch() {
         echo "  ✓ Worktree Created Successfully"
         echo "═══════════════════════════════════════════════════════════════"
         echo ""
-        echo "  Command:        wt_from_branch $1"
+        echo "  Command:        wt_from_branch $([[ "$open_in_code" == true ]] && echo "-c ")$1"
         echo "  Branch:         $branch_name"
         echo "  Commit:         $current_commit"
         echo "  Worktree Path:  $worktree_path"
@@ -282,10 +302,12 @@ wt_from_branch() {
         echo ""
         echo "═══════════════════════════════════════════════════════════════"
         echo ""
-        # Navigate to the new worktree and open in VS Code
-        # cd "$worktree_path"
-        # code .
-        # cd -
+        
+        # Open in VS Code if -c flag was provided
+        if [[ "$open_in_code" == true ]]; then
+            echo "Opening worktree in VS Code..."
+            code "$worktree_path"
+        fi
     else
         echo "Error: Failed to create worktree '$branch_name'." >&2
         return 1
